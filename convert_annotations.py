@@ -110,7 +110,12 @@ for subset in args.subsets:
     original_image_annotations = utils.csvread(
         os.path.join(base_dir, "annotations", image_label_sourcefile)
     )
-    original_image_sizes = utils.csvread(os.path.join("data/", image_size_sourcefile))
+    image_size_sourcefile_path = os.path.join("data/", image_size_sourcefile)
+    original_image_sizes = utils.csvread(
+        image_size_sourcefile_path
+        if os.path.exists(image_size_sourcefile_path)
+        else None
+    )
     if args.task == "bbox":
         original_annotations = utils.csvread(
             os.path.join(base_dir, "annotations", annotation_sourcefile)
