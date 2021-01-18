@@ -140,6 +140,8 @@ def convert_image_annotations(
             img["width"], img["height"] = image_size
         else:
             filename = os.path.join(image_dir, img["file_name"])
+            if not os.path.exists(filename):
+                continue
             img["width"], img["height"] = imagesize.get(filename)
 
         # Add to list of images
