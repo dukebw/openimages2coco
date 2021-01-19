@@ -13,6 +13,12 @@ def parse_args():
         description="Convert Open Images annotations into MS Coco format"
     )
     parser.add_argument(
+        "--classes",
+        help="OpenImages classes to keep in annotations",
+        type=str,
+        nargs="+",
+    )
+    parser.add_argument(
         "-p", "--path", dest="path", help="path to openimages data", type=str
     )
     parser.add_argument(
@@ -110,7 +116,7 @@ for subset in args.subsets:
     original_image_annotations = utils.csvread(
         os.path.join(base_dir, "annotations", image_label_sourcefile)
     )
-    image_size_sourcefile_path = os.path.join("data/", image_size_sourcefile)
+    image_size_sourcefile_path = os.path.join("annotations", image_size_sourcefile)
     original_image_sizes = utils.csvread(
         image_size_sourcefile_path
         if os.path.exists(image_size_sourcefile_path)
@@ -195,7 +201,9 @@ for subset in args.subsets:
 
     # Convert category information
     print("converting category info")
-    oi["categories"] = utils.convert_category_annotations(original_category_info)
+    oi["categories"] = utils.convert_category_annotations(
+        original_category_info, args.classes
+    )
 
     # Convert image mnetadata
     print("converting image info ...")
@@ -214,7 +222,11 @@ for subset in args.subsets:
     # Convert annotations
     if args.task == "bbox":
         oi["annotations"] = utils.convert_instance_annotations(
-            original_annotations, oi["images"], oi["categories"], start_index=0
+            original_annotations,
+            oi["images"],
+            oi["categories"],
+            start_index=0,
+            classes=args.classes,
         )
     elif args.task == "panoptic":
         oi["annotations"] = utils.convert_segmentation_annotations(

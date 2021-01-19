@@ -1,13 +1,13 @@
-import os
 import csv
+import os
 import warnings
-import imagesize
+from collections import defaultdict
 
+import imagesize
 import numpy as np
 import skimage.io as io
-
+from PIL import Image
 from tqdm import tqdm
-from collections import defaultdict
 
 
 def csvread(file):
@@ -50,7 +50,6 @@ def _url_to_license(licenses, mode="http"):
 
 
 def _list_to_dict(list_data):
-
     dict_data = []
     columns = list_data.pop(0)
     for i in range(len(list_data)):
@@ -59,15 +58,16 @@ def _list_to_dict(list_data):
     return dict_data
 
 
-def convert_category_annotations(orginal_category_info):
-
+def convert_category_annotations(original_category_info, classes):
     categories = []
-    num_categories = len(orginal_category_info)
+    num_categories = len(original_category_info)
     for i in range(num_categories):
+        if (classes is not None) and (original_category_info[i][0] not in classes):
+            continue
         cat = {}
         cat["id"] = i + 1
-        cat["name"] = orginal_category_info[i][1]
-        cat["freebase_id"] = orginal_category_info[i][0]
+        cat["name"] = original_category_info[i][1]
+        cat["freebase_id"] = original_category_info[i][0]
 
         categories.append(cat)
 
@@ -104,6 +104,9 @@ def convert_image_annotations(
     pos_img_lvl_anns = defaultdict(list)
     neg_img_lvl_anns = defaultdict(list)
     for ann in original_image_annotations_dict[1:]:
+        if ann["LabelName"] not in cats_by_freebase_id:
+            continue
+
         cat_of_ann = cats_by_freebase_id[ann["LabelName"]]["id"]
         if int(ann["Confidence"]) == 1:
             pos_img_lvl_anns[ann["ImageID"]].append(cat_of_ann)
@@ -118,6 +121,10 @@ def convert_image_annotations(
     for i in tqdm(range(num_images), mininterval=0.5):
         # Select image ID as key
         key = original_image_metadata_dict[i]["ImageID"]
+
+        img_filepath = os.path.join(image_dir, f"{key}.jpg")
+        if not os.path.exists(img_filepath):
+            continue
 
         # Copy information
         img = {}
@@ -139,10 +146,28 @@ def convert_image_annotations(
         if image_size is not None:
             img["width"], img["height"] = image_size
         else:
-            filename = os.path.join(image_dir, img["file_name"])
-            if not os.path.exists(filename):
-                continue
-            img["width"], img["height"] = imagesize.get(filename)
+            img["width"], img["height"] = imagesize.get(img_filepath)
+
+        rotation = original_image_metadata_dict[i]["Rotation"]
+        if (len(rotation) > 0) and (float(rotation) != 0.0):
+            print(
+                f"{key} rotated {rotation} {type(rotation)} {len(rotation)}. Swapping image height/width"
+            )
+
+            assert float(rotation) in [90.0, 180.0, 270.0]
+
+            if float(rotation) == 90.0:
+                method = Image.ROTATE_90
+            elif float(rotation) == 180.0:
+                method = Image.ROTATE_180
+            elif float(rotation) == 270.0:
+                method = Image.ROTATE_270
+
+            img_pil = Image.open(img_filepath)
+            img_pil.transpose(method)
+            img_pil.save(img_filepath)
+
+            img["rotation"] = float(rotation)
 
         # Add to list of images
         images.append(img)
@@ -151,7 +176,7 @@ def convert_image_annotations(
 
 
 def convert_instance_annotations(
-    original_annotations, images, categories, start_index=0
+    original_annotations, images, categories, start_index=0, classes=None
 ):
 
     original_annotations_dict = _list_to_dict(original_annotations)
@@ -183,25 +208,46 @@ def convert_instance_annotations(
         ann = {}
         ann["id"] = key
         image_id = original_annotations_dict[csv_line]["ImageID"]
+        if image_id not in imgs:
+            continue
         ann["image_id"] = image_id
         ann["freebase_id"] = original_annotations_dict[csv_line]["LabelName"]
+        if (classes is not None) and (ann["freebase_id"] not in classes):
+            continue
         ann["category_id"] = cats_by_freebase_id[ann["freebase_id"]]["id"]
         ann["iscrowd"] = False
 
-        xmin = (
-            float(original_annotations_dict[csv_line]["XMin"]) * imgs[image_id]["width"]
-        )
-        ymin = (
-            float(original_annotations_dict[csv_line]["YMin"])
-            * imgs[image_id]["height"]
-        )
-        xmax = (
-            float(original_annotations_dict[csv_line]["XMax"]) * imgs[image_id]["width"]
-        )
-        ymax = (
-            float(original_annotations_dict[csv_line]["YMax"])
-            * imgs[image_id]["height"]
-        )
+        xmin0 = float(original_annotations_dict[csv_line]["XMin"])
+        ymin0 = float(original_annotations_dict[csv_line]["YMin"])
+        xmax0 = float(original_annotations_dict[csv_line]["XMax"])
+        ymax0 = float(original_annotations_dict[csv_line]["YMax"])
+        w_im = imgs[image_id]["width"]
+        h_im = imgs[image_id]["height"]
+        w_bb = xmax0 - xmin0
+        h_bb = ymax0 - ymin0
+        if "rotation" not in imgs[image_id]:
+            xmin = xmin0 * w_im
+            ymin = ymin0 * h_im
+            xmax = xmax0 * w_im
+            ymax = ymax0 * h_im
+        elif imgs[image_id]["rotation"] == 90.0:
+            xmin = ymin0 * w_im
+            ymin = (1.0 - xmin0 - w_bb) * h_im
+            xmax = xmin + (h_bb * h_im)
+            ymax = ymin + (w_bb * w_im)
+        elif imgs[image_id]["rotation"] == 180.0:
+            xmin = (1.0 - xmin0 - w_bb) * w_im
+            ymin = (1.0 - ymin0 - h_bb) * h_im
+            xmax = xmin + (w_bb * w_im)
+            ymax = ymin + (h_bb * h_im)
+        elif imgs[image_id]["rotation"] == 270.0:
+            xmin = (1.0 - ymin0 - h_bb) * w_im
+            ymin = xmin0 * h_im
+            xmax = xmin + (h_bb * h_im)
+            ymax = ymin + (w_bb * w_im)
+        else:
+            assert False
+
         dx = xmax - xmin
         dy = ymax - ymin
         ann["bbox"] = [round(a, 2) for a in [xmin, ymin, dx, dy]]
