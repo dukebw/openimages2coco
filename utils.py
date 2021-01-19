@@ -148,6 +148,9 @@ def convert_image_annotations(
         else:
             img["width"], img["height"] = imagesize.get(img_filepath)
 
+        img["width_original"] = img["width"]
+        img["height_original"] = img["height"]
+
         rotation = original_image_metadata_dict[i]["Rotation"]
         if (len(rotation) > 0) and (float(rotation) != 0.0):
             print(
@@ -158,13 +161,17 @@ def convert_image_annotations(
 
             if float(rotation) == 90.0:
                 method = Image.ROTATE_90
+                img["width"] = img["height_original"]
+                img["height"] = img["width_original"]
             elif float(rotation) == 180.0:
                 method = Image.ROTATE_180
             elif float(rotation) == 270.0:
                 method = Image.ROTATE_270
+                img["width"] = img["height_original"]
+                img["height"] = img["width_original"]
 
             img_pil = Image.open(img_filepath)
-            img_pil.transpose(method)
+            img_pil = img_pil.transpose(method)
             img_pil.save(img_filepath)
 
             img["rotation"] = float(rotation)
@@ -221,8 +228,8 @@ def convert_instance_annotations(
         ymin0 = float(original_annotations_dict[csv_line]["YMin"])
         xmax0 = float(original_annotations_dict[csv_line]["XMax"])
         ymax0 = float(original_annotations_dict[csv_line]["YMax"])
-        w_im = imgs[image_id]["width"]
-        h_im = imgs[image_id]["height"]
+        w_im = imgs[image_id]["width_original"]
+        h_im = imgs[image_id]["height_original"]
         w_bb = xmax0 - xmin0
         h_bb = ymax0 - ymin0
         if "rotation" not in imgs[image_id]:
@@ -231,8 +238,8 @@ def convert_instance_annotations(
             xmax = xmax0 * w_im
             ymax = ymax0 * h_im
         elif imgs[image_id]["rotation"] == 90.0:
-            xmin = ymin0 * w_im
-            ymin = (1.0 - xmin0 - w_bb) * h_im
+            xmin = ymin0 * h_im
+            ymin = (1.0 - xmin0 - w_bb) * w_im
             xmax = xmin + (h_bb * h_im)
             ymax = ymin + (w_bb * w_im)
         elif imgs[image_id]["rotation"] == 180.0:
@@ -241,8 +248,8 @@ def convert_instance_annotations(
             xmax = xmin + (w_bb * w_im)
             ymax = ymin + (h_bb * h_im)
         elif imgs[image_id]["rotation"] == 270.0:
-            xmin = (1.0 - ymin0 - h_bb) * w_im
-            ymin = xmin0 * h_im
+            xmin = (1.0 - ymin0 - h_bb) * h_im
+            ymin = xmin0 * w_im
             xmax = xmin + (h_bb * h_im)
             ymax = ymin + (w_bb * w_im)
         else:
